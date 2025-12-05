@@ -32,26 +32,52 @@ pipeline {
             }
         }
 
-        stage('Build & Push Docker Image') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: "${DOCKER_CREDS}",
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh '''
-                        echo "[INFO] Docker Hub 로그인"
-                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+        stage('Build & Push Docker Image (on k8s-node02)') {
+    environment {
+        DOCKER_HOST_NODE = "192.168.20.107"   // k8s-node02 IP
+    }
+    steps {
+        withCredentials([
+            usernamePassword(credentialsId: 'docker-hub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')
+        ]) {
+            sshagent(credentials: ['node02-ssh']) {   // 아까 만든 SSH 크리덴셜 ID
+                sh '''
+                  echo "[INFO] k8s-node02에서 Docker 이미지 빌드 & 푸시 시작"
 
-                        echo "[INFO] Docker 이미지 빌드"
-                        docker build -t $DOCKER_IMAGE:$DOCKER_TAG .
+                  ssh -o StrictHostKeyChecking=no ubuntu@${DOCKER_HOST_NODE} << 'EOF'
+                    set -e
 
-                        echo "[INFO] Docker 이미지 푸시"
-                        docker push $DOCKER_IMAGE:$DOCKER_TAG
-                    '''
-                }
+                    echo "[INFO] 작업 디렉토리 준비"
+                    cd /home/ubuntu
+                    rm -rf spring-petclinic-ci || true
+                    mkdir -p spring-petclinic-ci
+                    cd spring-petclinic-ci
+
+                    echo "[INFO] Git 소스 가져오기"
+                    git clone https://github.com/JSH135/spring-petclinic.git src
+                    cd src
+
+                    echo "[INFO] Maven 빌드 (노드에서)"
+                    chmod +x mvnw
+                    ./mvnw -B -DskipTests package
+
+                    echo "[INFO] Docker Hub 로그인"
+                    echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+
+                    echo "[INFO] Docker 이미지 빌드 & 태깅"
+                    docker build -t josohyun/spring-petclinic:1 .
+                    docker tag josohyun/spring-petclinic:1 josohyun/spring-petclinic:latest
+
+                    echo "[INFO] Docker 이미지 푸시"
+                    docker push josohyun/spring-petclinic:1
+                    docker push josohyun/spring-petclinic:latest
+                  EOF
+                '''
             }
         }
+    }
+}
+
 
         stage('Deploy to Kubernetes') {
             steps {
