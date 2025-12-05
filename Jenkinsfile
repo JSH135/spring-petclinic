@@ -26,7 +26,8 @@ pipeline {
             steps {
                 sh '''
                     echo "[INFO] Maven build 시작"
-                    ./mvnw -q -DskipTests package
+                    chmod +x mvnw
+                    ./mvnw -B -DskipTests package
                 '''
             }
         }
