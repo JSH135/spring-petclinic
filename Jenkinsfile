@@ -1,91 +1,53 @@
 pipeline {
-    agent { label 'docker-builder' }
+    agent any
 
     environment {
-        DOCKERHUB_REPO = 'josohyun/spring-petclinic'
-        IMAGE_TAG      = "${env.BUILD_NUMBER}"
-        KUBECONFIG     = '/home/jenkins/.kube/config'
+        // Docker 이미지 이름
+        DOCKER_IMAGE = "josohyun/spring-petclinic"
+        DOCKER_TAG   = "latest"              // 필요하면 "build-${BUILD_NUMBER}" 등으로 바꿔도 됨
+
+        // Jenkins 에 등록해 둔 Docker Hub 크리덴셜 ID
+        DOCKER_CREDS = "dockerhub"
+
+        // Kubernetes
+        KUBE_NAMESPACE = "petclinic"
+        KUBECONFIG     = "/var/jenkins_home/.kube/config"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                git branch: 'main',
+                    url: 'https://github.com/JSH135/spring-petclinic.git'
             }
         }
 
         stage('Build JAR') {
             steps {
                 sh '''
-                  cd "$WORKSPACE"
-                  export MAVEN_OPTS="-Xmx512m"
-                  chmod +x mvnw
-                  ./mvnw -B -V -DskipTests package
+                    echo "[INFO] Maven build 시작"
+                    ./mvnw -q -DskipTests package
                 '''
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build & Push Docker Image') {
             steps {
-                sh '''
-                  cd "$WORKSPACE"
+                withCredentials([usernamePassword(
+                    credentialsId: "${DOCKER_CREDS}",
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh '''
+                        echo "[INFO] Docker Hub 로그인"
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-                  IMAGE_NAME=${DOCKERHUB_REPO}
-                  IMAGE_TAG=${IMAGE_TAG}
+                        echo "[INFO] Docker 이미지 빌드"
+                        docker build -t $DOCKER_IMAGE:$DOCKER_TAG .
 
-                  docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                  docker tag  ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest
-                '''
-            }
-        }
-
-        // kubelet이 쓰는 containerd(k8s.io)에 이미지 자동 로딩
-        stage('Load Image into containerd') {
-            steps {
-                sh '''
-                  cd "$WORKSPACE"
-
-                  IMAGE_NAME=${DOCKERHUB_REPO}
-                  IMAGE_TAG=${IMAGE_TAG}
-                  TAR=/tmp/spring-petclinic-${IMAGE_TAG}.tar
-
-                  # Docker -> tar
-                  docker save ${IMAGE_NAME}:${IMAGE_TAG} -o ${TAR}
-
-                  # tar -> containerd(k8s.io 네임스페이스)
-                  # jenkins 계정이 sudo 없이 ctr 실행 가능해야 함 (sudoers 설정 필요)
-                  sudo ctr -n k8s.io images import ${TAR}
-
-                  rm -f ${TAR}
-                '''
-            }
-        }
-
-        // Docker Hub push는 "되면 좋고, 안 되면 경고만 찍고 계속 진행"
-        stage('Push Docker Image (best effort)') {
-            steps {
-                script {
-                    try {
-                        timeout(time: 5, unit: 'MINUTES') {
-                            withCredentials([usernamePassword(credentialsId: 'dockerhub-creds',
-                                                             usernameVariable: 'DOCKER_USER',
-                                                             passwordVariable: 'DOCKER_PASS')]) {
-                                sh '''
-                                  cd "$WORKSPACE"
-
-                                  echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-
-                                  IMAGE_NAME=${DOCKERHUB_REPO}
-                                  IMAGE_TAG=${IMAGE_TAG}
-
-                                  docker push ${IMAGE_NAME}:${IMAGE_TAG} || echo "[WARN] push tag ${IMAGE_TAG} failed"
-                                  docker push ${IMAGE_NAME}:latest      || echo "[WARN] push latest failed"
-                                '''
-                            }
-                        }
-                    } catch (err) {
-                        echo "[WARN] Docker push failed or timed out: ${err}"
-                    }
+                        echo "[INFO] Docker 이미지 푸시"
+                        docker push $DOCKER_IMAGE:$DOCKER_TAG
+                    '''
                 }
             }
         }
@@ -93,14 +55,15 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
-                  cd "$WORKSPACE"
+                    echo "[INFO] Kubernetes 배포 시작"
 
-                  # 적용 대상 매니페스트: k8s/petclinic.yaml
-                  # 이 안에 Deployment + Service + Ingress + (DB 연동 env/Secret) 모두 정의되어 있어야 함
-                  kubectl apply -f k8s/petclinic.yaml
+                    # 이미지 태그만 바꿔서 롤링 업데이트
+                    kubectl --kubeconfig=$KUBECONFIG -n $KUBE_NAMESPACE set image deployment/petclinic \
+                        petclinic=$DOCKER_IMAGE:$DOCKER_TAG
 
-                  # 롤아웃 상태 확인
-                  kubectl rollout status deployment/petclinic -n petclinic
+                    # 롤아웃 완료까지 대기
+                    kubectl --kubeconfig=$KUBECONFIG -n $KUBE_NAMESPACE rollout status deployment/petclinic \
+                        --timeout=120s
                 '''
             }
         }
