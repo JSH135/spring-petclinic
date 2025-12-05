@@ -2,11 +2,11 @@ pipeline {
     agent any
 
     environment {
-        // Docker 이미지 이름
+        // Docker 이미지
         DOCKER_IMAGE = "josohyun/spring-petclinic"
-        DOCKER_TAG   = "latest"              // 필요하면 "build-${BUILD_NUMBER}" 등으로 바꿔도 됨
+        DOCKER_TAG   = "latest"
 
-        // Jenkins 에 등록해 둔 Docker Hub 크리덴셜 ID
+        // Jenkins에 등록한 Docker Hub 자격증명 ID
         DOCKER_CREDS = "dockerhub"
 
         // Kubernetes
@@ -57,11 +57,9 @@ pipeline {
                 sh '''
                     echo "[INFO] Kubernetes 배포 시작"
 
-                    # 이미지 태그만 바꿔서 롤링 업데이트
                     kubectl --kubeconfig=$KUBECONFIG -n $KUBE_NAMESPACE set image deployment/petclinic \
                         petclinic=$DOCKER_IMAGE:$DOCKER_TAG
 
-                    # 롤아웃 완료까지 대기
                     kubectl --kubeconfig=$KUBECONFIG -n $KUBE_NAMESPACE rollout status deployment/petclinic \
                         --timeout=120s
                 '''
