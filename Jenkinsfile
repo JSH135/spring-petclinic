@@ -22,7 +22,7 @@ spec:
 
   containers:
     # --------------------------------------
-    # Kaniko Container
+    # Kaniko Container (이미지 빌드 + 푸시)
     # --------------------------------------
     - name: kaniko
       image: gcr.io/kaniko-project/executor:debug
@@ -50,7 +50,7 @@ spec:
           mountPath: /kaniko/cache
 
     # --------------------------------------
-    # Maven Container
+    # Maven Container (Jar 빌드)
     # --------------------------------------
     - name: maven
       image: maven:3.9.6-eclipse-temurin-17
@@ -73,10 +73,11 @@ spec:
           mountPath: /root/.m2
 
     # --------------------------------------
-    # Kubectl Container
+    # Kubectl Container (배포)
+    #   ※ bitnami/kubectl:1.30 → 동작하는 이미지로 교체
     # --------------------------------------
     - name: kubectl
-      image: bitnami/kubectl:1.30
+      image: leeplayed/kubectl:1.28
       tty: true
       command: ["/bin/sh"]
       args: ["-c", "sleep infinity"]
@@ -94,7 +95,7 @@ spec:
           mountPath: /home/jenkins/agent/workspace/
 
     # --------------------------------------
-    # JNLP Agent
+    # JNLP Agent (Jenkins 에이전트)
     # --------------------------------------
     - name: jnlp
       image: jenkins/inbound-agent:latest
@@ -115,6 +116,7 @@ spec:
   # VOLUMES
   # --------------------------------------
   volumes:
+    # Docker Hub 토큰 (dockertoken 시크릿 사용)
     - name: docker-config
       secret:
         secretName: dockertoken
@@ -122,15 +124,15 @@ spec:
         - key: ".dockerconfigjson"
           path: config.json
 
-    # Jenkins workspace (emptyDir OK)
+    # Jenkins workspace (Pod 수명 동안만 유지)
     - name: workspace-volume
       emptyDir: {}
 
-    # Maven cache (build 속도용, emptyDir로도 충분)
+    # Maven 캐시 (빌드 속도 향상용)
     - name: maven-cache
       emptyDir: {}
 
-    # Kaniko cache
+    # Kaniko 캐시
     - name: kaniko-cache
       emptyDir: {}
 """
@@ -138,10 +140,10 @@ spec:
     }
 
     environment {
-        // ====== 여기만 당신 환경에 맞춤 ======
+        // ====== 여기만 네 환경에 맞게 세팅해 둠 ======
         REGISTRY      = "docker.io/josohyun"
         IMAGE         = "spring-petclinic"
-        TAG           = "${BUILD_NUMBER}"   // 1,2,3,... 자동 증가 태그
+        TAG           = "${BUILD_NUMBER}"    // 1,2,3,... 자동 증가
         K8S_NAMESPACE = "petclinic"
         K8S_DEPLOY    = "petclinic"
         K8S_CONTAINER = "petclinic"
@@ -151,7 +153,7 @@ spec:
 
         stage('Checkout') {
             steps {
-                // 레포가 public 이면 credentials 필요 없음
+                // public repo라 https + no credentials 사용
                 git branch: 'main',
                     url: 'https://github.com/JSH135/spring-petclinic.git'
             }
