@@ -12,9 +12,6 @@ metadata:
 spec:
   serviceAccountName: jenkins
 
-  #hostNetwork: true
-  #dnsPolicy: ClusterFirstWithHostNet
-
   tolerations:
     - key: "node-role.kubernetes.io/control-plane"
       operator: "Exists"
@@ -25,7 +22,7 @@ spec:
 
   containers:
     # --------------------------------------
-    # Kaniko Container
+    # Kaniko Container (Docker Build & Push)
     # --------------------------------------
     - name: kaniko
       image: gcr.io/kaniko-project/executor:debug
@@ -53,7 +50,7 @@ spec:
           mountPath: /kaniko/cache
 
     # --------------------------------------
-    # Maven Container
+    # Maven Container (Java Build)
     # --------------------------------------
     - name: maven
       image: maven:3.9.6-eclipse-temurin-17
@@ -76,10 +73,11 @@ spec:
           mountPath: /root/.m2
 
     # --------------------------------------
-    # Kubectl Container
+    # Kubectl Container (배포용)
+    #   - 여기 이미지는 공식 이미지/버전으로 교체 가능
     # --------------------------------------
     - name: kubectl
-      image: leeplayed/kubectl:1.28
+      image: bitnami/kubectl:latest
       tty: true
       command: ["/bin/sh"]
       args: ["-c", "sleep infinity"]
@@ -118,19 +116,23 @@ spec:
   # VOLUMES
   # --------------------------------------
   volumes:
+    # Docker Hub 로그인 정보 (kubectl 네임스페이스: jenkins 에 미리 생성)
     - name: docker-config
       secret:
         secretName: dockertoken
         items:
-        - key: ".dockerconfigjson"
-          path: config.json
+          - key: ".dockerconfigjson"
+            path: config.json
 
+    # Jenkins workspace
     - name: workspace-volume
       emptyDir: {}
 
+    # Maven cache
     - name: maven-cache
       emptyDir: {}
 
+    # Kaniko cache
     - name: kaniko-cache
       emptyDir: {}
 """
@@ -138,15 +140,20 @@ spec:
     }
 
     environment {
+        // ====== 여기만 본인 환경에 맞게 설정 ======
         REGISTRY      = "docker.io/josohyun"
         IMAGE         = "spring-petclinic"
-        TAG           = "${BUILD_NUMBER}"
+        TAG           = "${BUILD_NUMBER}"   // 1,2,3,... 자동 증가
         K8S_NAMESPACE = "petclinic"
         K8S_DEPLOY    = "petclinic"
         K8S_CONTAINER = "petclinic"
     }
 
     stages {
+
+        // ------------------------------------------------------
+        // 1) Git Checkout
+        // ------------------------------------------------------
         stage('Checkout') {
             steps {
                 git branch: 'main',
@@ -154,11 +161,15 @@ spec:
             }
         }
 
+        // ------------------------------------------------------
+        // 2) Maven Build (JAR 생성)
+        // ------------------------------------------------------
         stage('Maven Build') {
             steps {
                 container('maven') {
                     sh """
 export HOME=\$WORKSPACE
+
 mvn clean package \\
   -DskipTests \\
   -Dcheckstyle.skip=true \\
@@ -168,6 +179,9 @@ mvn clean package \\
             }
         }
 
+        // ------------------------------------------------------
+        // 3) Kaniko Build & Push (Docker 이미지 빌드 + Docker Hub 푸시)
+        // ------------------------------------------------------
         stage('Kaniko Build & Push') {
             steps {
                 container('kaniko') {
@@ -188,6 +202,9 @@ cd \$WORKSPACE
             }
         }
 
+        // ------------------------------------------------------
+        // 4) Deploy to Kubernetes (RollingUpdate)
+        // ------------------------------------------------------
         stage('Deploy to Kubernetes') {
             steps {
                 container('kubectl') {
@@ -196,14 +213,8 @@ kubectl set image deployment/${K8S_DEPLOY} \\
   ${K8S_CONTAINER}=${REGISTRY}/${IMAGE}:${TAG} \\
   -n ${K8S_NAMESPACE}
 
-# kubectl rollout status deployment/${K8S_DEPLOY} \\
-#   -n ${K8S_NAMESPACE} --timeout=10m
-# 롤아웃 대기 (10분까지 기다리고, 실패해도 로그만 찍고 계속)
-if ! kubectl rollout status deployment/${K8S_DEPLOY} \\
-  -n ${K8S_NAMESPACE} --timeout=10m; then
-  echo "[WARN] Rollout timeout, current status:"
-  kubectl get pods -n ${K8S_NAMESPACE} -o wide
-fi
+kubectl rollout status deployment/${K8S_DEPLOY} \\
+  -n ${K8S_NAMESPACE} --timeout=10m
 """
                 }
             }
