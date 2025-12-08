@@ -197,7 +197,7 @@ kubectl set image deployment/${K8S_DEPLOY} \\
   -n ${K8S_NAMESPACE}
 
 kubectl rollout status deployment/${K8S_DEPLOY} \\
-  -n ${K8S_NAMESPACE} --timeout=5m
+  -n ${K8S_NAMESPACE} --timeout=10m
 """
                 }
             }
