@@ -12,8 +12,8 @@ metadata:
 spec:
   serviceAccountName: jenkins
 
-  hostNetwork: true
-  dnsPolicy: ClusterFirstWithHostNet
+  #hostNetwork: true
+  #dnsPolicy: ClusterFirstWithHostNet
 
   tolerations:
     - key: "node-role.kubernetes.io/control-plane"
