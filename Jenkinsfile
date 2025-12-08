@@ -196,8 +196,8 @@ kubectl set image deployment/${K8S_DEPLOY} \\
   ${K8S_CONTAINER}=${REGISTRY}/${IMAGE}:${TAG} \\
   -n ${K8S_NAMESPACE}
 
-// kubectl rollout status deployment/${K8S_DEPLOY} \\
-//   -n ${K8S_NAMESPACE} --timeout=10m
+# kubectl rollout status deployment/${K8S_DEPLOY} \\
+#   -n ${K8S_NAMESPACE} --timeout=10m
 # 롤아웃 대기 (10분까지 기다리고, 실패해도 로그만 찍고 계속)
 if ! kubectl rollout status deployment/${K8S_DEPLOY} \\
   -n ${K8S_NAMESPACE} --timeout=10m; then
