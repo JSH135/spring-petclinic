@@ -79,10 +79,10 @@ spec:
     # Kubectl Container
     # --------------------------------------
     - name: kubectl
-      image: lachlanevenson/k8s-kubectl:v1.24.5
+      image: leeplayed/kubectl:1.28
       tty: true
-      command: ['cat']
-      args: ['']
+      command: ["/bin/sh"]
+      args: ["-c", "sleep infinity"]
       resources:
         requests:
           cpu: "250m"
