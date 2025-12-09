@@ -77,10 +77,10 @@ spec:
     #   - 여기 이미지는 공식 이미지/버전으로 교체 가능
     # --------------------------------------
     - name: kubectl
-      image: bitnami/kubectl:latest
+      image: lachlanevenson/k8s-kubectl:v1.30.0
       tty: true
-      command: ["/bin/sh"]
-      args: ["-c", "sleep infinity"]
+      command: ["cat"]
+      args: [""]
       resources:
         requests:
           cpu: "250m"
