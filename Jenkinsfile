@@ -79,7 +79,7 @@ spec:
     # Kubectl Container
     # --------------------------------------
     - name: kubectl
-      image: leeplayed/kubectl:1.28
+      image: josohyun/kubectl:1.28.0
       tty: true
       command: ["/bin/sh"]
       args: ["-c", "sleep infinity"]
